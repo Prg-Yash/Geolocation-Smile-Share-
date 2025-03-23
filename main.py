@@ -37,35 +37,61 @@ app.add_middleware(
 # Initialize Firebase (optional)
 firebase_initialized = False
 db = None
-if not firebase_admin._apps:
+
+def initialize_firebase():
+    global firebase_initialized, db
+    if firebase_admin._apps:
+        return True  # Already initialized
+        
     try:
         # Try to get Firebase credentials from environment variable
         firebase_creds_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_KEY')
         if firebase_creds_json:
-            # Create a temporary file to store the credentials
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
-                temp_file.write(firebase_creds_json)
-                temp_file_path = temp_file.name
-            
             try:
-                cred = credentials.Certificate(temp_file_path)
-                firebase_admin.initialize_app(cred)
-                db = firestore.client()
-                firebase_initialized = True
-            finally:
-                # Clean up the temporary file
-                os.unlink(temp_file_path)
-        else:
-            # Fallback to file-based credentials if environment variable is not set
-            if os.path.exists('serviceAccountKey.json'):
+                # Parse the JSON string to ensure it's valid
+                creds_dict = json.loads(firebase_creds_json)
+                
+                # Create a temporary file to store the credentials
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                    json.dump(creds_dict, temp_file)
+                    temp_file_path = temp_file.name
+                
+                try:
+                    cred = credentials.Certificate(temp_file_path)
+                    firebase_admin.initialize_app(cred)
+                    db = firestore.client()
+                    firebase_initialized = True
+                    print("Firebase initialized successfully from environment variable")
+                    return True
+                finally:
+                    # Clean up the temporary file
+                    os.unlink(temp_file_path)
+            except json.JSONDecodeError as e:
+                print(f"Error parsing Firebase credentials JSON: {e}")
+                return False
+        
+        # Fallback to file-based credentials
+        if os.path.exists('serviceAccountKey.json'):
+            try:
                 cred = credentials.Certificate('serviceAccountKey.json')
                 firebase_admin.initialize_app(cred)
                 db = firestore.client()
                 firebase_initialized = True
-            else:
-                print("Warning: Firebase credentials not found. Firebase features will be disabled.")
+                print("Firebase initialized successfully from serviceAccountKey.json")
+                return True
+            except Exception as e:
+                print(f"Error initializing Firebase from file: {e}")
+                return False
+        else:
+            print("Warning: No Firebase credentials found (neither in environment nor in serviceAccountKey.json)")
+            return False
+            
     except Exception as e:
         print(f"Warning: Failed to initialize Firebase: {e}")
+        return False
+
+# Initialize Firebase when the app starts
+initialize_firebase()
 
 # Initialize Gemini AI
 def initialize_gemini():
@@ -285,11 +311,26 @@ async def root():
 @app.post("/nearby-ngos/", response_model=List[NGOResponse])
 async def find_nearby_ngos(request: LocationRequest):
     """Get nearby NGOs based on user location"""
+    if not firebase_initialized:
+        # Try to initialize Firebase if it's not already initialized
+        if not initialize_firebase():
+            raise HTTPException(
+                status_code=500,
+                detail="Firebase is not initialized. Please check server configuration."
+            )
+    
     try:
         nearby = get_nearby_ngos(request.latitude, request.longitude, request.radius)
+        if not nearby:
+            # Return empty list with 200 status if no NGOs found
+            return []
         return nearby
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in find_nearby_ngos: {str(e)}")  # Log the error
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch nearby NGOs: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

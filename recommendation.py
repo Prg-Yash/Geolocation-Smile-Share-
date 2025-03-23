@@ -39,9 +39,16 @@ class NGOResponse(BaseModel):
     distance: float
     location: dict
     description: Optional[str] = None
-    contact: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     logoUrl: Optional[str] = None
-    ngoRating: Optional[float] = None
+    categories: Optional[List[str]] = None
+    displayType: Optional[str] = None
+    district: Optional[str] = None
+    state: Optional[str] = None
+    isVerified: Optional[str] = None
+    mission: Optional[str] = None
+    vision: Optional[str] = None
 
 def haversine_distance(lat1, lon1, lat2, lon2):
     """
@@ -90,15 +97,25 @@ def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> Lis
             # Only include NGOs within the specified radius
             if distance <= radius:
                 ngo_info = {
-                    'ngo_id': ngo.id,
+                    'ngo_id': ngo_data.get('ngoId', ngo.id),  # Use ngoId from data or fallback to document ID
                     'ngoName': ngo_data.get('ngoName', 'Unknown'),
                     'distance': round(distance, 2),
-                    'location': ngo_data['location'],
+                    'location': {
+                        'latitude': ngo_lat,
+                        'longitude': ngo_lon,
+                        'address': ngo_data['location'].get('address', '')
+                    },
                     'description': ngo_data.get('description'),
-                    'contact': ngo_data.get('contact'),
-                    'logoUrl': ngo_data.get('logoUrl'),
-                    'ngoRating': ngo_data.get('ngoRating'),
-                    **ngo_data  # Include all other NGO data
+                    'email': ngo_data.get('email'),
+                    'phone': ngo_data.get('phone'),
+                    'logoUrl': ngo_data.get('logoUrl', ''),
+                    'categories': ngo_data.get('categories', []),
+                    'displayType': ngo_data.get('displayType'),
+                    'district': ngo_data.get('district'),
+                    'state': ngo_data.get('state'),
+                    'isVerified': ngo_data.get('isVerified'),
+                    'mission': ngo_data.get('mission'),
+                    'vision': ngo_data.get('vision')
                 }
                 nearby_ngos.append(ngo_info)
         
@@ -108,6 +125,7 @@ def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> Lis
         return nearby_ngos
         
     except Exception as e:
+        print(f"Error getting nearby NGOs: {e}")  # Log the error
         raise HTTPException(status_code=500, detail=f"Error getting nearby NGOs: {str(e)}")
 
 @app.get("/")
@@ -131,7 +149,11 @@ async def find_nearby_ngos(request: LocationRequest):
         nearby = get_nearby_ngos(request.latitude, request.longitude, request.radius)
         return nearby
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in find_nearby_ngos: {str(e)}")  # Log the error
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch nearby NGOs: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
