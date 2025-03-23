@@ -7,7 +7,7 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 backlog = 2048
 
 # Worker processes
-workers = multiprocessing.cpu_count() * 2 + 1
+workers = 4  # Good default for most cases
 worker_class = 'uvicorn.workers.UvicornWorker'
 worker_connections = 1000
 timeout = 120
@@ -23,4 +23,11 @@ proc_name = 'ngo-connect-api'
 
 # SSL config
 keyfile = None
-certfile = None 
+certfile = None
+
+# Reload code when changed (development only)
+reload = False
+
+# Maximum requests before worker restart
+max_requests = 1000
+max_requests_jitter = 50 
