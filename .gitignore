@@ -29,6 +29,19 @@ wheels/
 .env.local
 .env.*.local
 
+# Virtual Environment
+venv/
+ENV/
+
 # IDE
+.idea/
 .vscode/
-.idea/ 
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Local development
+.DS_Store
+Thumbs.db 

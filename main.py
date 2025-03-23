@@ -14,7 +14,7 @@ import tempfile
 import shutil
 import re
 
-# Load environment variables
+# Load environment variables from .env file if it exists (local development)
 load_dotenv()
 
 # Initialize FastAPI
@@ -36,30 +36,47 @@ app.add_middleware(
 
 # Initialize Firebase
 if not firebase_admin._apps:
-    cred = credentials.Certificate('serviceAccountKey.json')
-    firebase_admin.initialize_app(cred)
+    try:
+        cred = credentials.Certificate('serviceAccountKey.json')
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        print(f"Warning: Failed to initialize Firebase: {e}")
 db = firestore.client()
 
 # Initialize Gemini AI
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in environment variables")
-
-genai.configure(api_key=GEMINI_API_KEY)
-
-# List available models and select the appropriate one
-try:
-    # Print available models to debug
-    print("Available Gemini models:")
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            print(f"Found model: {m.name}")
+def initialize_gemini():
+    # Try to get API key from environment variable
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError(
+            "GEMINI_API_KEY not found in environment variables. "
+            "Please set it in your Render dashboard under Environment Variables."
+        )
     
-    # Use gemini-1.5-flash instead of gemini-1.5-pro
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    try:
+        genai.configure(api_key=api_key)
+        # Use the latest Gemini model
+        model = genai.GenerativeModel('models/gemini-1.5-pro')
+        return model
+    except Exception as e:
+        raise ValueError(f"Failed to initialize Gemini model: {e}")
+
+# Initialize the model
+try:
+    model = initialize_gemini()
 except Exception as e:
-    print(f"Error initializing Gemini model: {e}")
-    raise ValueError(f"Failed to initialize Gemini model: {e}")
+    print(f"Warning: {e}")
+    model = None
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint to verify API key and model status"""
+    if not model:
+        raise HTTPException(
+            status_code=500,
+            detail="Gemini model not initialized. Please check your API key configuration."
+        )
+    return {"status": "healthy", "model": "initialized"}
 
 def extract_text_from_pdf(file_path: str) -> str:
     try:
