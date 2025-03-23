@@ -267,10 +267,27 @@ def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> Lis
         return []  # Return empty list if Firebase is not initialized
     try:
         ngo_ref = db.collection('ngo')
-        ngos = ngo_ref.get()
-        nearby_ngos = []
         
-        for ngo in ngos:
+        # Calculate the rough bounding box for the search radius
+        # 1 degree of latitude = ~111km
+        lat_range = radius / 111.0
+        # 1 degree of longitude = ~111km * cos(latitude)
+        lon_range = radius / (111.0 * cos(radians(user_lat)))
+        
+        # Query NGOs within the bounding box first
+        ngos = ngo_ref.where('location.latitude', '>=', user_lat - lat_range)\
+                     .where('location.latitude', '<=', user_lat + lat_range)\
+                     .limit(100)  # Limit the number of results for performance
+        
+        nearby_ngos = []
+        # Use a timeout for the query execution
+        try:
+            ngo_docs = ngos.get(timeout=30)  # 30 second timeout
+        except Exception as e:
+            print(f"Query timeout or error: {e}")
+            return []
+            
+        for ngo in ngo_docs:
             ngo_data = ngo.to_dict()
             if 'location' not in ngo_data:
                 continue
@@ -281,24 +298,26 @@ def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> Lis
             if ngo_lat is None or ngo_lon is None:
                 continue
             
-            distance = haversine_distance(user_lat, user_lon, ngo_lat, ngo_lon)
-            
-            if distance <= radius:
-                ngo_info = {
-                    'ngo_id': ngo.id,
-                    'ngoName': ngo_data.get('ngoName', 'Unknown'),
-                    'distance': round(distance, 2),
-                    'location': ngo_data['location'],
-                    'description': ngo_data.get('description'),
-                    'contact': ngo_data.get('contact'),
-                    'logoUrl': ngo_data.get('logoUrl'),
-                    'ngoRating': ngo_data.get('ngoRating'),
-                    **ngo_data
-                }
-                nearby_ngos.append(ngo_info)
+            # Only calculate distance for NGOs within the longitude range
+            if abs(ngo_lon - user_lon) <= lon_range:
+                distance = haversine_distance(user_lat, user_lon, ngo_lat, ngo_lon)
+                
+                if distance <= radius:
+                    ngo_info = {
+                        'ngo_id': ngo.id,
+                        'ngoName': ngo_data.get('ngoName', 'Unknown'),
+                        'distance': round(distance, 2),
+                        'location': ngo_data['location'],
+                        'description': ngo_data.get('description'),
+                        'contact': ngo_data.get('contact'),
+                        'logoUrl': ngo_data.get('logoUrl'),
+                        'ngoRating': ngo_data.get('ngoRating'),
+                        **ngo_data
+                    }
+                    nearby_ngos.append(ngo_info)
         
         nearby_ngos.sort(key=lambda x: x['distance'])
-        return nearby_ngos
+        return nearby_ngos[:50]  # Limit results to 50 NGOs
         
     except Exception as e:
         print(f"Error getting nearby NGOs: {e}")

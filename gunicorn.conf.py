@@ -30,4 +30,5 @@ reload = False
 
 # Maximum requests before worker restart
 max_requests = 1000
-max_requests_jitter = 50 
+max_requests_jitter = 50
+
