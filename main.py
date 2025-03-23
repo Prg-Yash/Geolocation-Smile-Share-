@@ -27,7 +27,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://your-frontend-domain.com"],
+    allow_origins=["*"],  # Allow all origins temporarily for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,13 +39,31 @@ firebase_initialized = False
 db = None
 if not firebase_admin._apps:
     try:
-        if os.path.exists('serviceAccountKey.json'):
-            cred = credentials.Certificate('serviceAccountKey.json')
-            firebase_admin.initialize_app(cred)
-            db = firestore.client()
-            firebase_initialized = True
+        # Try to get Firebase credentials from environment variable
+        firebase_creds_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_KEY')
+        if firebase_creds_json:
+            # Create a temporary file to store the credentials
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                temp_file.write(firebase_creds_json)
+                temp_file_path = temp_file.name
+            
+            try:
+                cred = credentials.Certificate(temp_file_path)
+                firebase_admin.initialize_app(cred)
+                db = firestore.client()
+                firebase_initialized = True
+            finally:
+                # Clean up the temporary file
+                os.unlink(temp_file_path)
         else:
-            print("Warning: serviceAccountKey.json not found. Firebase features will be disabled.")
+            # Fallback to file-based credentials if environment variable is not set
+            if os.path.exists('serviceAccountKey.json'):
+                cred = credentials.Certificate('serviceAccountKey.json')
+                firebase_admin.initialize_app(cred)
+                db = firestore.client()
+                firebase_initialized = True
+            else:
+                print("Warning: Firebase credentials not found. Firebase features will be disabled.")
     except Exception as e:
         print(f"Warning: Failed to initialize Firebase: {e}")
 
