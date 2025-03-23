@@ -34,14 +34,20 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
-# Initialize Firebase
+# Initialize Firebase (optional)
+firebase_initialized = False
+db = None
 if not firebase_admin._apps:
     try:
-        cred = credentials.Certificate('serviceAccountKey.json')
-        firebase_admin.initialize_app(cred)
+        if os.path.exists('serviceAccountKey.json'):
+            cred = credentials.Certificate('serviceAccountKey.json')
+            firebase_admin.initialize_app(cred)
+            db = firestore.client()
+            firebase_initialized = True
+        else:
+            print("Warning: serviceAccountKey.json not found. Firebase features will be disabled.")
     except Exception as e:
         print(f"Warning: Failed to initialize Firebase: {e}")
-db = firestore.client()
 
 # Initialize Gemini AI
 def initialize_gemini():
@@ -213,6 +219,8 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return c * r
 
 def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> List[dict]:
+    if not firebase_initialized:
+        return []  # Return empty list if Firebase is not initialized
     try:
         ngo_ref = db.collection('ngo')
         ngos = ngo_ref.get()
@@ -249,7 +257,8 @@ def get_nearby_ngos(user_lat: float, user_lon: float, radius: float = 50) -> Lis
         return nearby_ngos
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting nearby NGOs: {str(e)}")
+        print(f"Error getting nearby NGOs: {e}")
+        return []
 
 @app.get("/")
 async def root():
